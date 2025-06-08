@@ -1,1 +1,172 @@
+<div>
+        <label for="foodItem">Select Food Item:</label>
+        <!-- The dropdown options will be populated by Flask -->
+        <select id="foodItem" name="foodItem">
+            {% for item in food_items %}
+                <option value="{{ item }}">{{ item }}</option>
+            {% endfor %}
+        </select>
+    </div>
 
+    <div>
+        <label for="quantity">Quantity (grams):</label>
+        <input type="number" id="quantity" name="quantity" value="100" min="0">
+    </div>
+
+    <button id="addItemBtn">Add to Meal</button>
+    <button id="calculateBtn">Calculate GL/GI</button>
+    <button id="clearBtn">Clear Meal</button>
+
+    <div id="mealList">
+        <h3>Current Meal Items:</h3>
+        <ul id="mealItems">
+            <!-- Meal items will be listed here by JavaScript -->
+        </ul>
+    </div>
+
+    <div id="results">
+        <h3>Calculation Results:</h3>
+        <p id="glResult"></p>
+        <p id="giResult"></p>
+        <p id="errorMessages" class="error"></p>
+    </div>
+</div>
+
+<script>
+    let mealItems = []; // Array to store items in the current meal
+
+    const foodItemDropdown = document.getElementById('foodItem');
+    const quantityInput = document.getElementById('quantity');
+    const addItemBtn = document.getElementById('addItemBtn');
+    const calculateBtn = document.getElementById('calculateBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const mealItemsList = document.getElementById('mealItems');
+    const glResult = document.getElementById('glResult');
+    const giResult = document.getElementById('giResult');
+    const errorMessages = document.getElementById('errorMessages');
+
+    // Function to update the displayed meal list
+    function updateMealList() {
+        mealItemsList.innerHTML = ''; // Clear current list
+        if (mealItems.length === 0) {
+            const li = document.createElement('li');
+            li.textContent = 'Meal list is empty.';
+            mealItemsList.appendChild(li);
+        } else {
+            mealItems.forEach(item => {
+                const li = document.createElement('li');
+                li.textContent = `${item['Food Item']}: ${item['Quantity Used in gram']} grams`;
+                mealItemsList.appendChild(li);
+            });
+        }
+    }
+
+    // Add item button click handler
+    addItemBtn.addEventListener('click', () => {
+        const selectedItem = foodItemDropdown.value;
+        const quantity = parseFloat(quantityInput.value);
+
+        if (selectedItem && quantity > 0) {
+            // Check if item already exists, if so, update quantity
+            const existingItemIndex = mealItems.findIndex(item => item['Food Item'] === selectedItem);
+            if (existingItemIndex > -1) {
+                mealItems[existingItemIndex]['Quantity Used in gram'] += quantity;
+                 console.log(`Updated quantity for ${selectedItem}`);
+            } else {
+                mealItems.push({'Food Item': selectedItem, 'Quantity Used in gram': quantity});
+                console.log(`Added ${selectedItem}`);
+            }
+
+            quantityInput.value = 100; // Reset quantity input
+            updateMealList();
+             // Clear previous results/errors when adding a new item
+            glResult.textContent = '';
+            giResult.textContent = '';
+            errorMessages.textContent = '';
+
+        } else if (quantity <= 0) {
+            errorMessages.textContent = "Quantity must be greater than 0.";
+        } else {
+             errorMessages.textContent = "Please select a food item.";
+        }
+         console.log("Current mealItems:", mealItems);
+    });
+
+    // Calculate button click handler
+    calculateBtn.addEventListener('click', async () => {
+        if (mealItems.length === 0) {
+            errorMessages.textContent = "Meal list is empty. Add items before calculating.";
+            glResult.textContent = '';
+            giResult.textContent = '';
+            return;
+        }
+
+         // Clear previous results/errors
+        glResult.textContent = '';
+        giResult.textContent = '';
+        errorMessages.textContent = '';
+
+        try {
+            const response = await fetch('/calculate', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ meal_items: mealItems })
+            });
+
+            const data = await response.json();
+             console.log("Calculation response:", data);
+
+
+            if (response.ok) { // Check if the HTTP status is OK (2xx)
+                if (data.glycemic_load) {
+                    glResult.textContent = `Estimated Total Meal Glycemic Load: ${data.glycemic_load}`;
+                } else if (data.glycemic_load_error) {
+                    glResult.textContent = `GL Error: ${data.glycemic_load_error}`;
+                    glResult.style.color = '#d9534f'; // Highlight error
+                } else {
+                     glResult.textContent = 'GL calculation returned no value.';
+                }
+
+
+                if (data.glycemic_index && data.gi_category) {
+                    giResult.textContent = `Estimated Total Meal Glycemic Index: ${data.glycemic_index} (${data.gi_category} GI)`;
+                } else if (data.glycemic_index_error) {
+                     giResult.textContent = `GI Error: ${data.glycemic_index_error}`;
+                     giResult.style.color = '#d9534f'; // Highlight error
+                } else {
+                     giResult.textContent = 'GI calculation returned no value.';
+                }
+
+
+                if (data.message) { // Handle messages like "Meal list is empty" from backend
+                    errorMessages.textContent = data.message;
+                }
+
+
+            } else { // Handle HTTP errors (e.g., 400, 500)
+                 errorMessages.textContent = data.error || `Server error: ${response.status}`;
+            }
+
+        } catch (error) {
+            console.error('Error:', error);
+            errorMessages.textContent = `An error occurred while communicating with the server: ${error.message}`;
+        }
+    });
+
+    // Clear meal button click handler
+    clearBtn.addEventListener('click', () => {
+        mealItems = []; // Reset the array
+        updateMealList(); // Update the display
+         // Clear results/errors
+        glResult.textContent = '';
+        giResult.textContent = '';
+        errorMessages.textContent = '';
+        console.log("Meal list cleared.");
+    });
+
+    // Initial display when the page loads
+    updateMealList();
+
+</script>
